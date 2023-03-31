@@ -1,0 +1,71 @@
+from scipy.interpolate import splrep, BSpline #need the BSpline module
+import numpy as np
+import matplotlib.pyplot as plt#need for diagnostic plots
+
+
+def spectrum_uncertainty_estimation_global_median_reflectance_use_cubic_splines(wavlength_gemini_gmos_vd_angstroms,reflectance_gemini_gmos_vd_super, spline_start, spline_end, compute_scatter_start, compute_scatter_end, window_size):
+    #first based on scatter of adjacent data points in a moving window, window size is in bins then compute median of global scatter
+
+    #compute cubic spline and divide spectrum by cubic spline
+    start_dex = spline_start
+    end_dex = spline_end
+    tck_s = splrep(wavlength_gemini_gmos_vd_angstroms[start_dex:end_dex], reflectance_gemini_gmos_vd_super[start_dex:end_dex], s=len(wavlength_gemini_gmos_vd_angstroms))#50: avoids the CN emission line
+
+    #check plots
+    #compare spectrum with spline
+    plt.figure()
+    #plt.plot(sol_br_wav,solar_divided)
+    #plt.plot(sol_br_wav, BSpline(*tck_s)(sol_br_wav), '-')
+    plt.plot(reflectance_gemini_gmos_vd_super)
+    plt.plot(BSpline(*tck_s)(wavlength_gemini_gmos_vd_angstroms), '-')
+
+    #compare spectrum divided by spline #this is the answer
+    plt.figure()
+    #plt.plot(sol_br_wav, solar_divided/BSpline(*tck_s)(sol_br_wav), '-')
+    plt.plot(reflectance_gemini_gmos_vd_super/BSpline(*tck_s)(wavlength_gemini_gmos_vd_angstroms), '-')
+
+    #do uncertainty estimation
+
+    reflectance_gemini_gmos_vd = reflectance_gemini_gmos_vd_super[compute_scatter_start:compute_scatter_end]
+
+    gmos_reflectance_length = len(reflectance_gemini_gmos_vd)
+
+    reflectance_gemini_gmos_vd_unc = np.zeros(gmos_reflectance_length)
+
+    # 4500 angstroms to 10600 angstroms first
+    #wavlength_cut = np.where((wavlength_gemini_gmos_vd_angstroms > 0)&(wavlength_gemini_gmos_vd_angstroms < 10600))
+    for i in range(0, gmos_reflectance_length):
+        if i < window_size:
+            #need to scale with signal
+            reflectance_gemini_gmos_vd_unc[i] =  np.std(reflectance_gemini_gmos_vd[0:window_size + (window_size-i)])
+        if (gmos_reflectance_length - i) < window_size:
+            reflectance_gemini_gmos_vd_unc[i] = np.std(reflectance_gemini_gmos_vd[(gmos_reflectance_length - i-window_size):-1])
+        if (i > window_size) and ((gmos_reflectance_length - i) > window_size):
+            reflectance_gemini_gmos_vd_unc[i] = np.std(reflectance_gemini_gmos_vd[i-window_size:(i-1) + window_size])
+
+    reflectance_gemini_gmos_vd_unc[np.where(np.isnan(reflectance_gemini_gmos_vd_unc)==True)] = 0.0
+
+    #print reflectance_gemini_gmos_vd_unc
+    median_unc = np.median(reflectance_gemini_gmos_vd_unc)
+
+    print "median_unc", median_unc
+
+    #now scale to flux in individual bins
+
+    #now compute uncertainty for super array
+    reflectance_gemini_gmos_vd_unc_super = np.zeros(len(wavlength_gemini_gmos_vd_angstroms))
+
+    reflectance_gemini_gmos_vd_super_median = np.median(reflectance_gemini_gmos_vd_super)
+
+    for i in range(0, len(wavlength_gemini_gmos_vd_angstroms)):
+        if i < window_size:
+            #need to scale with signal
+            reflectance_gemini_gmos_vd_unc_super[i] =  median_unc / np.sqrt(reflectance_gemini_gmos_vd_super[i]/reflectance_gemini_gmos_vd_super_median)
+        if (gmos_reflectance_length - i) < window_size:
+            reflectance_gemini_gmos_vd_unc_super[i] = median_unc / np.sqrt(reflectance_gemini_gmos_vd_super[i]/reflectance_gemini_gmos_vd_super_median)
+        if (i > window_size) and ((gmos_reflectance_length - i) > window_size):
+            reflectance_gemini_gmos_vd_unc_super[i] = median_unc / np.sqrt(reflectance_gemini_gmos_vd_super[i]/reflectance_gemini_gmos_vd_super_median)
+
+    reflectance_gemini_gmos_vd_unc_super[np.where(np.isnan(reflectance_gemini_gmos_vd_unc_super)==True)] = 0.0
+
+    return reflectance_gemini_gmos_vd_unc_super
